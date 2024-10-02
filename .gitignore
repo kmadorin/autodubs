@@ -1,0 +1,10 @@
+.streamlit/
+__pycache__/
+cut_video.mp4
+ffmpeg2pass-0.log
+ffmpeg2pass-0.log.mbtree
+Machine Learning Explained in 100 Seconds.mp4
+Machine Learning Explained in 100 Seconds.webm
+output_compressed.mp4
+output.mp3
+output.mp4
