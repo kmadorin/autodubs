@@ -1,6 +1,9 @@
 .streamlit/
+.zed/
 __pycache__/
 cut_video.mp4
+cut_video copy.mp4
+extracted_audio.mp3
 ffmpeg2pass-0.log
 ffmpeg2pass-0.log.mbtree
 Machine Learning Explained in 100 Seconds.mp4

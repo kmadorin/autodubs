@@ -7,36 +7,38 @@ import anthropic
 from pytubefix import YouTube
 from pytubefix.cli import on_progress
 from pydub import AudioSegment
-from elevenlabs.client import ElevenLabs, Voice, VoiceSettings
+from elevenlabs.client import ElevenLabs
+from elevenlabs import Voice, VoiceSettings
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
+from moviepy.editor import VideoFileClip
 
 
 import os
 from pydub import AudioSegment
 
-__all__ = ['dub_yt_video', 'compress_video']
+__all__ = ['dub_yt_video', 'compress_video', 'combine_video']
 
-def shorten_audio(filename):    
+def shorten_audio(filename):
     # Check if the file exists, if not create an empty file
     if not os.path.exists(filename):
         open(filename, 'a').close()
-    
+
     # Load the audio file
     audio = AudioSegment.from_file(filename)
-    
+
     # Cut the audio to 60 seconds
     cut_audio = audio[:60 * 1000]
-    
+
     # Export the shortened audio
     cut_audio.export(filename, format="mp4")
-    
+
     return filename
 
 def generate_translation(original_text, destination_language):
     prompt = (f"{anthropic.HUMAN_PROMPT} Please translate this video transcript into {destination_language}. You will get to the translation directly after I prompted 'the translation:'"
     f"{anthropic.AI_PROMPT} Understood, I will get to the translation without any opening lines."
     f"{anthropic.HUMAN_PROMPT} Great! this is the transcript: {original_text}; the translation:")
-    
+
     c = anthropic.Anthropic(api_key=st.secrets["claude_key"])
 
     resp = c.completions.create(
@@ -70,12 +72,80 @@ def generate_dubs(client, text):
 
     return filename
 
+# def combine_video(video_filename, audio_filename):
+#     ffmpeg_extract_subclip(video_filename, 0, 60, targetname="cut_video.mp4")
+#     output_filename = "output.mp4"
+#     command = ["ffmpeg", "-y", "-i", "cut_video.mp4", "-i", audio_filename, "-c:v", "copy", "-c:a", "aac", output_filename]
+#     subprocess.run(command)
+#     return output_filename
+
 def combine_video(video_filename, audio_filename):
-    ffmpeg_extract_subclip(video_filename, 0, 60, targetname="cut_video.mp4")
+    # Step 1: Extract video without audio
+    video = VideoFileClip(video_filename)
+    video_without_audio = video.without_audio()
+
+    # Cut the video to 60 seconds if it's longer
+    if video.duration > 60:
+        video_without_audio = video_without_audio.subclip(0, 60)
+
+    # Save the video without audio
+    temp_video_filename = "temp_video_no_audio.mp4"
+    video_without_audio.write_videofile(temp_video_filename, codec="libx264")
+
+    # Close the video objects
+    video.close()
+    video_without_audio.close()
+
+    # Step 2: Combine the video (without audio) with the new audio
     output_filename = "output.mp4"
-    command = ["ffmpeg", "-y", "-i", "cut_video.mp4", "-i", audio_filename, "-c:v", "copy", "-c:a", "aac", output_filename]
+    command = [
+        "ffmpeg", "-y",
+        "-i", temp_video_filename,
+        "-i", audio_filename,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-map", "0:v:0",  # Use video from first input
+        "-map", "1:a:0",  # Use audio from second input
+        "-shortest",  # Cut off at the end of the shortest input
+        output_filename
+    ]
     subprocess.run(command)
+
+    # Optional: Remove the temporary file
+    subprocess.run(["rm", temp_video_filename])
+
     return output_filename
+
+def dub_video_file(file, language):
+
+    client = ElevenLabs(
+        api_key=st.secrets['xi_api_key'],
+    )
+
+    print(f"Processing video file: {file}")
+    if file is not None:
+        print("Extracting audio from video")
+        audio_filename = "extracted_audio.mp3"
+        command = ["ffmpeg", "-y", "-i", file, "-q:a", "0", "-map", "a", audio_filename]
+        subprocess.run(command)
+
+        if os.path.exists(audio_filename):
+            print("Transcribing audio")
+            model = whisper.load_model("base")
+            cut_audio = shorten_audio(audio_filename)
+            transcription = model.transcribe(cut_audio)
+
+            if transcription:
+                dubbing_caption = st.caption("Generating translation...")
+                translation = generate_translation(transcription['text'], language)
+                dubbing_caption = st.caption("Begin dubbing...")
+                dubs_audio = generate_dubs(client, translation)
+                dubbing_caption.caption("Dubs generated! combining with the video...")
+                dubbing_caption.caption("Combining the video and the dubs...")
+                output_filename = combine_video(file, dubs_audio)
+                if os.path.exists(output_filename):
+                    print("Video successfully dubbed!")
+                    return output_filename
 
 def dub_yt_video(url, language):
     client = ElevenLabs(
@@ -110,7 +180,7 @@ def dub_yt_video(url, language):
                     print("Video  successfully dubbed!")
                     return output_filename
 
-def compress_video_advanced(input_path, output_path, target_size_mb=50, resolution='1280:720'):
+def compress_video(input_path, output_path, target_size_mb=50, resolution='1280:720'):
     target_size_bits = target_size_mb * 8 * 1024 * 1024
     duration = float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', input_path]).strip())
     target_total_bitrate = int(target_size_bits / duration)
@@ -129,5 +199,5 @@ def compress_video_advanced(input_path, output_path, target_size_mb=50, resoluti
         '-b:a', '128k',
         output_path
     ]
-    
+
     subprocess.run(cmd, check=True)

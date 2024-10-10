@@ -7,7 +7,8 @@ import anthropic
 from pytubefix import YouTube
 from pytubefix.cli import on_progress
 from pydub import AudioSegment
-from elevenlabs.client import ElevenLabs, Voice, VoiceSettings
+from elevenlabs import Voice, VoiceSettings
+from elevenlabs.client import ElevenLabs
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
 import os
